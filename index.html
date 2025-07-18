@@ -73,8 +73,12 @@
             left: 0; 
             top: 0; 
             height: 4px; 
-            width: 100%; 
+            width: 85%; 
             transition: width 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
         }
         .field .tileP .health { background-color: #00ff00; }
         .inventory-box {
@@ -182,6 +186,12 @@
             this.enemies = [];
             this.items = [];
             this.gameOver = false;
+            
+            // Добавляем свойства для отслеживания состояния клавиш
+            this.keys = {};
+            this.moveRequested = false;
+            this.lastMoveTime = 0;
+            this.moveDelay = 150; // Задержка между перемещениями в миллисекундах
         }
 
         Game.prototype.init = function() {
@@ -401,15 +411,26 @@
 
         Game.prototype.setupEventListeners = function() {
             const self = this;
+            
+            // Обработчики нажатия и отпускания клавиш
             $(document).on('keydown', function(e) {
                 if (self.gameOver) return;
                 
-                switch (e.key.toLowerCase()) {
-                    case 'w': self.movePlayer(0, -1); break;
-                    case 'a': self.movePlayer(-1, 0); break;
-                    case 's': self.movePlayer(0, 1); break;
-                    case 'd': self.movePlayer(1, 0); break;
-                    case ' ': self.playerAttack(); break;
+                const key = e.key.toLowerCase();
+                self.keys[key] = true;
+                
+                if (['w', 'a', 's', 'd', ' '].includes(key)) {
+                    e.preventDefault();
+                }
+            });
+            
+            $(document).on('keyup', function(e) {
+                const key = e.key.toLowerCase();
+                self.keys[key] = false;
+                
+                // Сбрасываем флаг для атаки при отпускании пробела
+                if (key === ' ') {
+                    self.moveRequested = false;
                 }
             });
             
@@ -417,45 +438,96 @@
             $('.field-box').on('click', function() {
                 $(this).focus();
             }).focus();
+            
+            // Запускаем игровой цикл
+            this.gameLoop();
+        };
+        
+        Game.prototype.gameLoop = function() {
+            const self = this;
+            
+            function loop() {
+                if (!self.gameOver) {
+                    self.processInput();
+                }
+                requestAnimationFrame(loop);
+            }
+            
+            loop();
+        };
+        
+        Game.prototype.processInput = function() {
+            const currentTime = Date.now();
+            
+            // Проверяем, прошло ли достаточно времени с последнего перемещения
+            if (currentTime - this.lastMoveTime < this.moveDelay) {
+                return;
+            }
+            
+            let moved = false;
+            
+            // Обработка перемещения
+            if (this.keys['w']) {
+                this.movePlayer(0, -1);
+                moved = true;
+            }
+            if (this.keys['a']) {
+                this.movePlayer(-1, 0);
+                moved = true;
+            }
+            if (this.keys['s']) {
+                this.movePlayer(0, 1);
+                moved = true;
+            }
+            if (this.keys['d']) {
+                this.movePlayer(1, 0);
+                moved = true;
+            }
+            
+            // Обработка атаки
+            if (this.keys[' '] && !this.moveRequested) {
+                this.playerAttack();
+                this.moveRequested = true;
+                moved = true;
+            }
+            
+            // Обновляем время последнего перемещения
+            if (moved) {
+                this.lastMoveTime = currentTime;
+            }
         };
 
-       Game.prototype.movePlayer = function(dx, dy) {
-        console.log('movePlayer:', dx, dy, 'from', this.player.x, this.player.y);
-        const newX = this.player.x + dx;
-        const newY = this.player.y + dy;
+        Game.prototype.movePlayer = function(dx, dy) {
+            const newX = this.player.x + dx;
+            const newY = this.player.y + dy;
 
-        // Проверка границ карты
-        if (newX < 0 || newX >= this.MAP_WIDTH || newY < 0 || newY >= this.MAP_HEIGHT) {
-            console.log('Out of bounds');
-            return;
-        }
+            // Проверка границ карты
+            if (newX < 0 || newX >= this.MAP_WIDTH || newY < 0 || newY >= this.MAP_HEIGHT) {
+                return;
+            }
+            
+            // Проверка на стену
+            if (this.map[newY][newX] === this.TILE_TYPES.WALL) {
+                return;
+            }
+            
+            // Проверка на врага
+            if (this.map[newY][newX] === this.TILE_TYPES.ENEMY) {
+                return;
+            }
 
-        // Проверка на стену
-        if (this.map[newY][newX] === this.TILE_TYPES.WALL) {
-            console.log('Wall at new position');
-            return;
-        }
+            // Подбор предметов
+            if (this.map[newY][newX] === this.TILE_TYPES.HEALTH || 
+                this.map[newY][newX] === this.TILE_TYPES.SWORD) {
+                this.pickItem(newX, newY);
+            }
 
-        // Проверка на врага
-        if (this.map[newY][newX] === this.TILE_TYPES.ENEMY) {
-            console.log('Enemy at new position');
-            return;
-        }
+            // Перемещение игрока
+            this.map[this.player.y][this.player.x] = this.TILE_TYPES.FLOOR;
+            this.player.x = newX;
+            this.player.y = newY;
+            this.map[newY][newX] = this.TILE_TYPES.PLAYER;
 
-        // Подбор предметов
-        if (this.map[newY][newX] === this.TILE_TYPES.HEALTH ||
-            this.map[newY][newX] === this.TILE_TYPES.SWORD) {
-            this.pickItem(newX, newY);
-            console.log('Picked up item at', newX, newY);
-        }
-
-        // Перемещение игрока
-        this.map[this.player.y][this.player.x] = this.TILE_TYPES.FLOOR;
-        this.player.x = newX;
-        this.player.y = newY;
-        this.map[newY][newX] = this.TILE_TYPES.PLAYER;
-
-        
             // Перемещение врагов
             this.moveEnemies();
             
