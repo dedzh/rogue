@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>РОГАЛИК</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body, html { 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #000; 
+            color: #fff; 
+            font-family: Arial, sans-serif; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { 
+            font-size: 28px; 
+            margin: 10px 0; 
+            text-align: center;
+            color: #ffcc00;
+        }
+        .status-bar {
+            margin: 10px 0;
+            padding: 10px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 5px;
+            width: 800px;
+            display: flex;
+            justify-content: space-around;
+        }
+        .status-item {
+            font-size: 18px;
+        }
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .field-box { 
+            border: 2px solid #555; 
+            overflow: hidden;
+            margin: 10px;
+            box-shadow: 0 0 10px rgba(255, 204, 0, 0.3);
+        }
+        .field { 
+            position: relative; 
+            width: 2000px; 
+            height: 1200px; 
+            background: #111;
+        }
+        .field .tile { 
+            position: absolute; 
+            width: 50px; 
+            height: 50px; 
+            background-size: cover;
+            background-image: url(images/tile-.png); 
+            z-index: 5; 
+        }
+        .field .tileW { background-image: url(images/tile-W.png); }
+        .field .tileE { background-image: url(images/tile-E.png); z-index: 10; }
+        .field .tileP { background-image: url(images/tile-P.png); z-index: 15; }
+        .field .tileHP { background-image: url(images/tile-HP.png); z-index: 9; }
+        .field .tileSW { background-image: url(images/tile-SW.png); z-index: 9; }
+        .field .tile .health { 
+            background-color: #ff0000; 
+            z-index: 20; 
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            height: 4px; 
+            width: 100%; 
+            transition: width 0.3s;
+        }
+        .field .tileP .health { background-color: #00ff00; }
+        .inventory-box {
+            margin: 15px 0;
+            padding: 15px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 5px;
+            width: 800px;
+        }
+        .inventory-title {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #ffcc00;
+            text-align: center;
+        }
+        .inventory-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .inventory-item {
+            width: 40px;
+            height: 40px;
+            background-size: cover;
+            border: 1px solid #555;
+            border-radius: 4px;
+        }
+        .inventory-hp { background-image: url(images/tile-HP.png); }
+        .inventory-sword { background-image: url(images/tile-SW.png); }
+        .controls {
+            margin: 15px 0;
+            padding: 10px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #ff0000;
+            font-size: 48px;
+            padding: 20px;
+            border: 3px solid #ff0000;
+            border-radius: 10px;
+            z-index: 100;
+            display: none;
+        }
+    </style>
+    
+</head>
+<body>
+    <h1>РОГАЛИК</h1>
+    
+    <div class="status-bar">
+        <div class="status-item">Здоровье: <span id="health">100</span>%</div>
+        <div class="status-item">Урон: <span id="damage">10</span></div>
+        <div class="status-item">Врагов осталось: <span id="enemies-count">10</span></div>
+    </div>
+    
+    <div class="game-container">
+        <div class="field-box">
+            <div class="field"></div>
+            <div class="game-over">ИГРА ОКОНЧЕНА!</div>
+        </div>
+    </div>
+    
+    <div class="inventory-box">
+        <div class="inventory-title">Инвентарь</div>
+        <div class="inventory-items" id="inventory"></div>
+    </div>
+    
+    <div class="controls">
+        <p>Управление: WASD - движение, ПРОБЕЛ - атака</p>
+    </div>
+
+    <script>
+        function Game() {
+            this.MAP_WIDTH = 40;
+            this.MAP_HEIGHT = 24;
+            this.TILE_SIZE = 50;
+            
+            this.TILE_TYPES = {
+                WALL: 'W',
+                FLOOR: '-',
+                PLAYER: 'P',
+                ENEMY: 'E',
+                HEALTH: 'HP',
+                SWORD: 'SW'
+            };
+            
+            this.map = [];
+            this.player = {
+                x: 0,
+                y: 0,
+                health: 100,
+                maxHealth: 100,
+                damage: 10,
+                inventory: []
+            };
+            this.enemies = [];
+            this.items = [];
+            this.gameOver = false;
+        }
+
+        Game.prototype.init = function() {
+            this.generateMap();
+            this.renderMap();
+            this.updateStatus();
+            this.updateInventory();
+            this.setupEventListeners();
+        };
+
+        Game.prototype.generateMap = function() {
+            // Заполняем всю карту стенами
+            for (let y = 0; y < this.MAP_HEIGHT; y++) {
+                this.map[y] = [];
+                for (let x = 0; x < this.MAP_WIDTH; x++) {
+                    this.map[y][x] = this.TILE_TYPES.WALL;
+                }
+            }
+
+            // Генерация комнат (5-10)
+            const roomCount = 5 + Math.floor(Math.random() * 6);
+            const rooms = [];
+            
+            for (let i = 0; i < roomCount; i++) {
+                const width = 3 + Math.floor(Math.random() * 6);
+                const height = 3 + Math.floor(Math.random() * 6);
+                const x = 1 + Math.floor(Math.random() * (this.MAP_WIDTH - width - 1));
+                const y = 1 + Math.floor(Math.random() * (this.MAP_HEIGHT - height - 1));
+
+                // Упрощенная проверка - разрешаем комнатам соприкасаться
+                let canPlace = true;
+                for (const room of rooms) {
+                    // Проверяем только значительные пересечения
+                    if (x < room.x + room.width && x + width > room.x &&
+                        y < room.y + room.height && y + height > room.y) {
+                        canPlace = false;
+                        break;
+                    }
+                }
+
+                if (canPlace) {
+                    rooms.push({x, y, width, height});
+                    for (let dy = 0; dy < height; dy++) {
+                        for (let dx = 0; dx < width; dx++) {
+                            this.map[y + dy][x + dx] = this.TILE_TYPES.FLOOR;
+                        }
+                    }
+                }
+            }
+
+            // Соединяем комнаты коридорами
+            if (rooms.length > 0) {
+                const connectedRooms = [rooms[0]];
+                const unconnectedRooms = rooms.slice(1);
+                
+                while (unconnectedRooms.length > 0) {
+                    const connectedIndex = Math.floor(Math.random() * connectedRooms.length);
+                    const unconnectedIndex = Math.floor(Math.random() * unconnectedRooms.length);
+                    const room1 = connectedRooms[connectedIndex];
+                    const room2 = unconnectedRooms[unconnectedIndex];
+                    
+                    this.connectRooms(room1, room2);
+                    
+                    connectedRooms.push(room2);
+                    unconnectedRooms.splice(unconnectedIndex, 1);
+                }
+            }
+
+            // Размещаем игрока
+            this.placePlayer();
+
+            // Размещаем врагов (10)
+            for (let i = 0; i < 10; i++) {
+                this.placeEnemy();
+            }
+
+            // Размещаем предметы (2 меча, 10 зелий)
+            for (let i = 0; i < 2; i++) this.placeItem(this.TILE_TYPES.SWORD);
+            for (let i = 0; i < 10; i++) this.placeItem(this.TILE_TYPES.HEALTH);
+        };
+
+        Game.prototype.connectRooms = function(room1, room2) {
+            let x1 = room1.x + Math.floor(Math.random() * room1.width);
+            let y1 = room1.y + Math.floor(Math.random() * room1.height);
+            let x2 = room2.x + Math.floor(Math.random() * room2.width);
+            let y2 = room2.y + Math.floor(Math.random() * room2.height);
+            
+            // Создаем коридор по горизонтали
+            while (x1 !== x2) {
+                this.map[y1][x1] = this.TILE_TYPES.FLOOR;
+                x1 += (x1 < x2) ? 1 : -1;
+            }
+            
+            // Создаем коридор по вертикали
+            while (y1 !== y2) {
+                this.map[y1][x1] = this.TILE_TYPES.FLOOR;
+                y1 += (y1 < y2) ? 1 : -1;
+            }
+        };
+
+        Game.prototype.placePlayer = function() {
+            let placed = false;
+            let attempts = 0;
+            
+            // Ищем случайное свободное место
+            while (!placed && attempts < 1000) {
+                const x = Math.floor(Math.random() * this.MAP_WIDTH);
+                const y = Math.floor(Math.random() * this.MAP_HEIGHT);
+                
+                if (this.map[y][x] === this.TILE_TYPES.FLOOR) {
+                    this.player.x = x;
+                    this.player.y = y;
+                    this.map[y][x] = this.TILE_TYPES.PLAYER;
+                    placed = true;
+                }
+                attempts++;
+            }
+            
+            // Если не нашли случайное место, используем первое свободное
+            if (!placed) {
+                for (let y = 0; y < this.MAP_HEIGHT; y++) {
+                    for (let x = 0; x < this.MAP_WIDTH; x++) {
+                        if (this.map[y][x] === this.TILE_TYPES.FLOOR) {
+                            this.player.x = x;
+                            this.player.y = y;
+                            this.map[y][x] = this.TILE_TYPES.PLAYER;
+                            return;
+                        }
+                    }
+                }
+            }
+        };
+
+        Game.prototype.placeEnemy = function() {
+            let placed = false;
+            let attempts = 0;
+            
+            while (!placed && attempts < 1000) {
+                const x = Math.floor(Math.random() * this.MAP_WIDTH);
+                const y = Math.floor(Math.random() * this.MAP_HEIGHT);
+                
+                if (this.map[y][x] === this.TILE_TYPES.FLOOR) {
+                    this.enemies.push({
+                        x: x,
+                        y: y,
+                        health: 30,
+                        maxHealth: 30,
+                        damage: 5,
+                        type: this.TILE_TYPES.ENEMY
+                    });
+                    this.map[y][x] = this.TILE_TYPES.ENEMY;
+                    placed = true;
+                }
+                attempts++;
+            }
+        };
+
+        Game.prototype.placeItem = function(type) {
+            let placed = false;
+            let attempts = 0;
+            
+            while (!placed && attempts < 1000) {
+                const x = Math.floor(Math.random() * this.MAP_WIDTH);
+                const y = Math.floor(Math.random() * this.MAP_HEIGHT);
+                
+                if (this.map[y][x] === this.TILE_TYPES.FLOOR) {
+                    this.items.push({x, y, type});
+                    this.map[y][x] = type;
+                    placed = true;
+                }
+                attempts++;
+            }
+        };
+
+        Game.prototype.renderMap = function() {
+            const $field = $('.field');
+            $field.empty();
+            
+            // Сначала отрисовываем пол и стены
+            for (let y = 0; y < this.MAP_HEIGHT; y++) {
+                for (let x = 0; x < this.MAP_WIDTH; x++) {
+                    const tileType = this.map[y][x];
+                    let className = 'tile';
+                    
+                    // Определяем класс для типа тайла
+                    if (tileType === this.TILE_TYPES.WALL) className += ' tileW';
+                    else if (tileType === this.TILE_TYPES.FLOOR) className += ' tile';
+                    else if (tileType === this.TILE_TYPES.ENEMY) className += ' tileE';
+                    else if (tileType === this.TILE_TYPES.PLAYER) className += ' tileP';
+                    else if (tileType === this.TILE_TYPES.HEALTH) className += ' tileHP';
+                    else if (tileType === this.TILE_TYPES.SWORD) className += ' tileSW';
+                    
+                    const $tile = $(`<div class="${className}"></div>`);
+                    $tile.css({
+                        left: x * this.TILE_SIZE,
+                        top: y * this.TILE_SIZE
+                    });
+
+                    // Добавляем полоску здоровья для игрока и врагов
+                    if (tileType === this.TILE_TYPES.PLAYER) {
+                        const healthPercent = (this.player.health / this.player.maxHealth) * 100;
+                        const $health = $(`<div class="health" style="width: ${healthPercent}%;"></div>`);
+                        $tile.append($health);
+                    } else if (tileType === this.TILE_TYPES.ENEMY) {
+                        const enemy = this.enemies.find(e => e.x === x && e.y === y);
+                        if (enemy) {
+                            const healthPercent = (enemy.health / enemy.maxHealth) * 100;
+                            const $health = $(`<div class="health" style="width: ${healthPercent}%;"></div>`);
+                            $tile.append($health);
+                        }
+                    }
+
+                    $field.append($tile);
+                }
+            }
+        };
+
+        Game.prototype.setupEventListeners = function() {
+            const self = this;
+            $(document).on('keydown', function(e) {
+                if (self.gameOver) return;
+                
+                switch (e.key.toLowerCase()) {
+                    case 'w': self.movePlayer(0, -1); break;
+                    case 'a': self.movePlayer(-1, 0); break;
+                    case 's': self.movePlayer(0, 1); break;
+                    case 'd': self.movePlayer(1, 0); break;
+                    case ' ': self.playerAttack(); break;
+                }
+            });
+            
+            // Фокусировка на игре при клике
+            $('.field-box').on('click', function() {
+                $(this).focus();
+            }).focus();
+        };
+
+       Game.prototype.movePlayer = function(dx, dy) {
+        console.log('movePlayer:', dx, dy, 'from', this.player.x, this.player.y);
+        const newX = this.player.x + dx;
+        const newY = this.player.y + dy;
+
+        // Проверка границ карты
+        if (newX < 0 || newX >= this.MAP_WIDTH || newY < 0 || newY >= this.MAP_HEIGHT) {
+            console.log('Out of bounds');
+            return;
+        }
+
+        // Проверка на стену
+        if (this.map[newY][newX] === this.TILE_TYPES.WALL) {
+            console.log('Wall at new position');
+            return;
+        }
+
+        // Проверка на врага
+        if (this.map[newY][newX] === this.TILE_TYPES.ENEMY) {
+            console.log('Enemy at new position');
+            return;
+        }
+
+        // Подбор предметов
+        if (this.map[newY][newX] === this.TILE_TYPES.HEALTH ||
+            this.map[newY][newX] === this.TILE_TYPES.SWORD) {
+            this.pickItem(newX, newY);
+            console.log('Picked up item at', newX, newY);
+        }
+
+        // Перемещение игрока
+        this.map[this.player.y][this.player.x] = this.TILE_TYPES.FLOOR;
+        this.player.x = newX;
+        this.player.y = newY;
+        this.map[newY][newX] = this.TILE_TYPES.PLAYER;
+
+        
+            // Перемещение врагов
+            this.moveEnemies();
+            
+            this.renderMap();
+            this.updateStatus();
+        };
+
+        Game.prototype.moveEnemies = function() {
+            for (let i = 0; i < this.enemies.length; i++) {
+                const enemy = this.enemies[i];
+                let dx = 0;
+                let dy = 0;
+                
+                // Случайное движение (30% шанс) или движение к игроку (70% шанс)
+                if (Math.random() < 0.7) {
+                    // Движение к игроку
+                    if (Math.abs(enemy.x - this.player.x) > Math.abs(enemy.y - this.player.y)) {
+                        dx = enemy.x < this.player.x ? 1 : -1;
+                    } else {
+                        dy = enemy.y < this.player.y ? 1 : -1;
+                    }
+                } else {
+                    // Случайное движение
+                    const dir = Math.floor(Math.random() * 4);
+                    if (dir === 0) dx = 1;
+                    else if (dir === 1) dx = -1;
+                    else if (dir === 2) dy = 1;
+                    else if (dir === 3) dy = -1;
+                }
+                
+                const newX = enemy.x + dx;
+                const newY = enemy.y + dy;
+                
+                // Проверка возможности перемещения
+                if (newX >= 0 && newX < this.MAP_WIDTH && 
+                    newY >= 0 && newY < this.MAP_HEIGHT &&
+                    this.map[newY][newX] === this.TILE_TYPES.FLOOR) {
+                    
+                    this.map[enemy.y][enemy.x] = this.TILE_TYPES.FLOOR;
+                    enemy.x = newX;
+                    enemy.y = newY;
+                    this.map[newY][newX] = this.TILE_TYPES.ENEMY;
+                }
+                
+                // Атака игрока, если рядом
+                this.enemyAttack(enemy);
+            }
+        };
+        
+        Game.prototype.enemyAttack = function(enemy) {
+            const dx = Math.abs(enemy.x - this.player.x);
+            const dy = Math.abs(enemy.y - this.player.y);
+            
+            // Атака, если игрок на соседней клетке
+            if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1) || 
+                (dx === 1 && dy === 1)) {
+                this.player.health -= enemy.damage;
+                this.updateStatus();
+                
+                if (this.player.health <= 0) {
+                    this.player.health = 0;
+                    this.gameOver = true;
+                    $('.game-over').show();
+                }
+            }
+        };
+
+        Game.prototype.pickItem = function(x, y) {
+            const itemIndex = this.items.findIndex(item => item.x === x && item.y === y);
+            if (itemIndex === -1) return;
+
+            const item = this.items[itemIndex];
+            this.items.splice(itemIndex, 1);
+
+            if (item.type === this.TILE_TYPES.HEALTH) {
+                this.player.health = Math.min(this.player.maxHealth, this.player.health + 20);
+                this.player.inventory.push('health');
+            } else if (item.type === this.TILE_TYPES.SWORD) {
+                this.player.damage += 5;
+                this.player.inventory.push('sword');
+            }
+            
+            this.map[y][x] = this.TILE_TYPES.FLOOR;
+            this.updateStatus();
+            this.updateInventory();
+        };
+
+        Game.prototype.updateInventory = function() {
+            const $inventory = $('#inventory');
+            $inventory.empty();
+            
+            this.player.inventory.forEach(item => {
+                const className = item === 'health' ? 'inventory-item inventory-hp' : 'inventory-item inventory-sword';
+                $inventory.append(`<div class="${className}" title="${item === 'health' ? 'Зелье здоровья' : 'Меч'}"></div>`);
+            });
+        };
+
+        Game.prototype.playerAttack = function() {
+            let attacked = false;
+            
+            // Проверяем все соседние клетки
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    
+                    const x = this.player.x + dx;
+                    const y = this.player.y + dy;
+                    
+                    if (x < 0 || x >= this.MAP_WIDTH || y < 0 || y >= this.MAP_HEIGHT) {
+                        continue;
+                    }
+                    
+                    if (this.map[y][x] === this.TILE_TYPES.ENEMY) {
+                        const enemyIndex = this.enemies.findIndex(e => e.x === x && e.y === y);
+                        if (enemyIndex !== -1) {
+                            this.enemies[enemyIndex].health -= this.player.damage;
+                            attacked = true;
+                            
+                            if (this.enemies[enemyIndex].health <= 0) {
+                                this.enemies.splice(enemyIndex, 1);
+                                this.map[y][x] = this.TILE_TYPES.FLOOR;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (attacked) {
+                this.renderMap();
+                this.updateStatus();
+            }
+        };
+
+        Game.prototype.updateStatus = function() {
+            $('#health').text(this.player.health);
+            $('#damage').text(this.player.damage);
+            $('#enemies-count').text(this.enemies.length);
+        };
+
+        $(document).ready(function() {
+            const game = new Game();
+            game.init();
+        });
+    </script>
+</body>
+</html>
