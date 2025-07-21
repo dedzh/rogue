@@ -40,6 +40,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            position: relative;
         }
         .field-box { 
             border: 2px solid #555; 
@@ -130,9 +131,38 @@
             border-radius: 10px;
             z-index: 100;
             display: none;
+            text-align: center;
+        }
+        .game-win {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #28d77a;
+            font-size: 48px;
+            padding: 20px;
+            border: 3px solid #28d77a;
+            border-radius: 10px;
+            z-index: 100;
+            display: none;
+            text-align: center;
+        }
+        .restart-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            font-size: 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .restart-btn:hover {
+            background: #45a049;
         }
     </style>
-    
 </head>
 <body>
     <h1>РОГАЛИК</h1>
@@ -146,7 +176,14 @@
     <div class="game-container">
         <div class="field-box">
             <div class="field"></div>
-            <div class="game-over">ИГРА ОКОНЧЕНА!</div>
+            <div class="game-over">
+                ИГРА ОКОНЧЕНА! ВЫ ПРОИГРАЛИ!
+                <button class="restart-btn">Играть снова</button>
+            </div>
+            <div class="game-win">
+                ПОБЕДА! ВЫ УНИЧТОЖИЛИ ВСЕХ ВРАГОВ!
+                <button class="restart-btn">Играть снова</button>
+            </div>
         </div>
     </div>
     
@@ -186,12 +223,13 @@
             this.enemies = [];
             this.items = [];
             this.gameOver = false;
+            this.gameWon = false;
             
             // Добавляем свойства для отслеживания состояния клавиш
             this.keys = {};
             this.moveRequested = false;
             this.lastMoveTime = 0;
-            this.moveDelay = 150; // Задержка между перемещениями в миллисекундах
+            this.moveDelay = 80; // Задержка между перемещениями в миллисекундах
         }
 
         Game.prototype.init = function() {
@@ -200,6 +238,10 @@
             this.updateStatus();
             this.updateInventory();
             this.setupEventListeners();
+            
+            // Скрываем экраны окончания игры
+            $('.game-over').hide();
+            $('.game-win').hide();
         };
 
         Game.prototype.generateMap = function() {
@@ -414,7 +456,7 @@
             
             // Обработчики нажатия и отпускания клавиш
             $(document).on('keydown', function(e) {
-                if (self.gameOver) return;
+                if (self.gameOver || self.gameWon) return;
                 
                 const key = e.key.toLowerCase();
                 self.keys[key] = true;
@@ -439,6 +481,11 @@
                 $(this).focus();
             }).focus();
             
+            // Обработчик кнопки рестарта
+            $('.restart-btn').on('click', function() {
+                self.resetGame();
+            });
+            
             // Запускаем игровой цикл
             this.gameLoop();
         };
@@ -447,7 +494,7 @@
             const self = this;
             
             function loop() {
-                if (!self.gameOver) {
+                if (!self.gameOver && !self.gameWon) {
                     self.processInput();
                 }
                 requestAnimationFrame(loop);
@@ -658,6 +705,12 @@
             if (attacked) {
                 this.renderMap();
                 this.updateStatus();
+                
+                // Проверка на победу
+                if (this.enemies.length === 0) {
+                    this.gameWon = true;
+                    $('.game-win').show();
+                }
             }
         };
 
@@ -665,6 +718,36 @@
             $('#health').text(this.player.health);
             $('#damage').text(this.player.damage);
             $('#enemies-count').text(this.enemies.length);
+        };
+        
+        Game.prototype.resetGame = function() {
+            // Сброс состояния
+            this.map = [];
+            this.player = {
+                x: 0,
+                y: 0,
+                health: 100,
+                maxHealth: 100,
+                damage: 10,
+                inventory: []
+            };
+            this.enemies = [];
+            this.items = [];
+            this.gameOver = false;
+            this.gameWon = false;
+            this.keys = {};
+            this.moveRequested = false;
+            this.lastMoveTime = 0;
+            
+            // Скрываем экраны окончания игры
+            $('.game-over').hide();
+            $('.game-win').hide();
+            
+            // Перегенерируем игру
+            this.generateMap();
+            this.renderMap();
+            this.updateStatus();
+            this.updateInventory();
         };
 
         $(document).ready(function() {
